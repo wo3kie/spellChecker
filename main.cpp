@@ -68,8 +68,46 @@ std::string getWord( Node const * const node )
         return "";
     }
 
-    return getWord( node->parent_ ) + std::string( 1, node->letter_ );
+    if( node->letter_ == char( 0 ) ){
+        return getWord( node->parent_ );
+    }
+    else{
+        return getWord( node->parent_ ) + std::string( 1, node->letter_ );
+    }
 }
+
+struct TrieStats
+{
+    TrieStats( Node const * const root )
+    {
+        traverse( root );
+    }
+
+    void traverse( Node const * const node )
+    {
+        nodesCounter_ += 1;
+        childrenCounter_ += node->children_.size();
+
+        if( node->end_ ){
+            wordsCounter_ += 1;
+        }
+
+        if( node->children_.empty() ){
+            leavesCounter_ += 1;
+        }
+        else
+        {
+            for( auto const & pair : node->children_ ){
+                traverse( pair.second );
+            }
+        }
+    }
+
+    unsigned nodesCounter_ = 0;
+    unsigned leavesCounter_ = 0;
+    unsigned childrenCounter_ = 0;
+    unsigned wordsCounter_ = 0;
+};
 
 /*
  * PenaltyPolicy
@@ -197,6 +235,7 @@ struct TrieIterator
 #ifndef NDEBUG
         debug_ += "D";
 #endif
+
     }
     
     int getPenalty() const
@@ -344,6 +383,15 @@ struct SpellChecker : SpellCheckerBase
     SpellChecker( std::string const & fileName )
     {
         readDictFile( fileName );
+
+#ifndef NDEBUG
+        TrieStats ts( trie_ );
+        std::cout << "Nodes counter: " << ts.nodesCounter_ << std::endl;
+        std::cout << "Leaves counter: " << ts.leavesCounter_ << std::endl;
+        std::cout << "Avg. children/node: " << 1.0 * ts.childrenCounter_ / ts.nodesCounter_ << std::endl;
+        std::cout << "Words counter: " << ts.wordsCounter_ << std::endl;
+#endif
+
     }
 
     std::vector< std::string > getSuggestions( std::string const & word )
@@ -356,13 +404,27 @@ struct SpellChecker : SpellCheckerBase
             emitLetter( c );
         }
 
+        std::vector< TrieIterator * > iterators( begin(), end() );
+
+        std::sort(
+            iterators.begin(),
+            iterators.end(),
+            []( TrieIterator const * const lhs, TrieIterator const * const rhs ){
+                return lhs->penalty_ < rhs->penalty_;
+            }
+        );
+
         std::vector< std::string > result;
 
-        for( auto i : (*this) )
+        for( auto i : iterators )
         {
             if( i->node_->end_ )
             {
                 std::string suggestion = getWord( i->node_ );
+
+#ifndef NDEBUG
+                std::cout << "> " << suggestion << " " << i->penalty_ << " " << i->debug_ << std::endl;
+#endif
 
                 if( contain( result, suggestion ) == false ){
                     result.push_back( std::move( suggestion ) );
