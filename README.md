@@ -35,4 +35,46 @@ checkers
 checked
 heck
 ```
+  
+## performance
+Spell checker most of the time can return suggestions to you in less than 1 millisecond.  
+```{r, engine='bash'}
+$ ./sc english
+? a
+5µs
+? by
+142µs
+? cad
+173µs
+? boys
+248µs
+? empty
+260µs
+? sister
+763µs
+? England
+584µs
+? mitigate
+311µs
+? Alexander
+326µs
+? zoologists
+1239µs
+? Bournemouth
+382µs
+? Indianapolis
+706µs
+? Liechtenstein
+369µs
+? Mephistopheles
+450µs
+```
+
+but sometimes you can find a word when processing takes a few milliseconds  
+
+```{r, engine='bash'}
+$ ./sc english
+? abracadabra
+7968µs
+```
 

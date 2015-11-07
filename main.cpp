@@ -23,6 +23,25 @@ bool contain( std::vector< T > const & array, T const & value ){
     return std::find( array.begin(), array.end(), value ) != array.end();
 }
 
+template< typename T > 
+void test( T const & t ) 
+{
+    using namespace std::chrono;
+
+    time_point< system_clock, nanoseconds > const & start = high_resolution_clock::now();
+
+    t(); 
+
+    time_point< system_clock, nanoseconds > const & end = high_resolution_clock::now();
+
+    duration< long int, std::nano > const & diff = end - start;
+
+    std::cout
+        << duration_cast< microseconds >( diff ).count()
+        << "µs"
+        << std::endl;
+}
+
 /*
  * Node
  */
@@ -544,7 +563,7 @@ struct SpellChecker : SpellCheckerBase{
 
     }
 
-    std::vector< std::string > getSuggestions( std::string const & word ){
+    std::vector< std::string > getSuggestionsImpl( std::string const & word ){
         if( word.size() < 2 ){
             return std::vector< std::string >( 1, word );
         }
@@ -587,6 +606,18 @@ struct SpellChecker : SpellCheckerBase{
         finalize();
 
         return result;
+    }
+
+    std::vector< std::string > getSuggestions( std::string const & word ){
+
+#ifdef NDEBUG
+        return getSuggestionsImpl( word );
+#else
+        std::vector< std::string > result;
+        test( [ this, & word, & result ](){ result = this->getSuggestionsImpl( word ); } );
+        return result;
+#endif
+
     }
 
     KeyboardLayout keyboard_;

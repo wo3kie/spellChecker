@@ -1,6 +1,6 @@
 CXX=g++
 CC=$(CXX)
-CXXFLAGS=$(INC) --std=c++11 -g -O1 -DNDEBUG
+CXXFLAGS=$(INC) --std=c++11 -g -O1
 
 all: sc
 
