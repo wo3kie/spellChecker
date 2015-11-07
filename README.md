@@ -35,9 +35,15 @@ checkers
 checked
 heck
 ```
+
+You can use it together with *rlwrap* to get history and easy editing  
+  
+```{r, engine='bash'}
+$ rlwrap ./sc english
+```
   
 ## performance
-Spell checker most of the time can return suggestions to you in less than 1 millisecond.  
+spellChecker most of the time can return suggestions to you in less than 1 millisecond  
 ```{r, engine='bash'}
 $ ./sc english
 ? a
