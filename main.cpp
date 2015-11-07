@@ -1,9 +1,11 @@
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <fstream>
 #include <list>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -110,11 +112,131 @@ struct TrieStats
 };
 
 /*
+ * Keyboard Layout
+ */
+
+std::string const polishKeyboardLayout(
+    "| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 0 | - | = |\n"
+    " | q | w | e | r | t | y | u | i | o | p | [ |\n"
+    "  | a | s | d | f | g | h | j | k | l | ; | ' |\n"
+    "   | z | x | c | v | b | n | m | , | . | / |"
+);
+
+std::string const polishKeyboardShiftLayout(
+    "| ! | @ | # | $ | % | ^ | & | * | ( | ) | _ | + |\n"
+    " | Q | W | E | R | T | Y | U | I | O | P | { |\n"
+    "  | A | S | D | F | G | H | J | K | L | : | \" |\n"
+    "   | Z | X | C | V | B | N | M | < | > | ? |"
+);
+
+std::string const polishKeyboardAltLayout(
+    "|   |   |   |   |   |   |   |   |   |   |   |   |\n"
+    " |   |   | ę |   |   |   |   |   | ó |   |   |\n"
+    "  | ą | ś |   |   |   |   |   |   | ł |   |   |\n"
+    "   | ż | ź | ć |   |   | ń |   |   |   |   |"
+);
+
+struct KeyboardLayout
+{
+    struct Position
+    {
+        unsigned x_;
+        unsigned y_;
+        unsigned z_;
+
+        unsigned distance( Position const & other ) const
+        {
+            unsigned const distance =
+                2 * abs( x_ - other.x_ ) +
+                2 * abs( y_ - other.y_ ) +
+                0.5 * abs( z_ - other.z_ );
+
+            return std::min( 6u, distance );
+        }
+    };
+
+    void addLayout( unsigned id, std::istream & input )
+    {
+        unsigned lineNo = 0;
+        std::string line;
+        while( std::getline( input, line ) )
+        {
+            char c = 0;
+            unsigned i = 0;
+
+            while( i < line.size() )
+            {
+                c = line[ i++ ];
+                
+                if( c == '|' ){
+                    break;
+                }
+            }
+
+            while( i < line.size() )
+            {
+                c = line[ i++ ];
+
+                if( c != ' ' ){
+                    throw std::runtime_error( "invalid keyboard layout" );
+                }
+
+                c = line[ i++ ];
+
+                if( c != ' ' )
+                {
+                    if( layout_.count( c ) > 0 ){
+                        throw std::runtime_error( "invalid keyboard layout" );
+                    }
+
+                    layout_[ c ] = Position{ id, lineNo, i };
+                }
+
+                c = line[ i++ ];
+
+                if( c != ' ' ){
+                    throw std::runtime_error( "invalid keyboard layout" );
+                }
+
+                c = line[ i++ ];
+
+                if( c != '|' ){
+                    throw std::runtime_error( "invalid keyboard layout" );
+                }
+            }
+
+
+            lineNo += 1;
+        }
+    }
+
+    unsigned distance( char c1, char c2 ) const
+    {
+        if( layout_.count( c1 ) == 0 ){
+            return 8;
+        }
+
+        if( layout_.count( c2 ) == 0 ){
+            return 8;
+        }
+
+        return layout_.find( c1 )->second.distance( layout_.find( c2 )->second );
+    }
+
+    std::map< char, Position > layout_;
+};
+
+/*
  * PenaltyPolicy
  */
 
 struct PenaltyPolicy
 {
+    PenaltyPolicy( KeyboardLayout const * keyboard )
+        : keyboard_( keyboard )
+    {
+    }
+
     virtual ~PenaltyPolicy()
     {
     }
@@ -126,30 +248,49 @@ struct PenaltyPolicy
             case 1:
             case 2: 
             case 3:
-                return 1;
-            case 4: 
-            case 5: 
                 return 2;
-            case 6:
             default:
-                return 3;
+                return wordLength;
         }
     }
 
     virtual int insertLetter( char const previousLetter, char const currentLetter, char const nextLetter = char( 0 ) ) const
     {
-        return 1;
+        if( nextLetter == char( 0 ) ){
+            return keyboard_->distance( previousLetter, currentLetter );
+        }
+
+        return 
+            std::min( 
+                keyboard_->distance( previousLetter, currentLetter ),
+                keyboard_->distance( currentLetter, nextLetter )
+            );
     }
 
     virtual int replaceLetter( char const previousLetter, char const currentLetter, char const nextLetter = char( 0 ) ) const
     {
-        return 1;
+        return keyboard_->distance( previousLetter, currentLetter );
+    }
+
+    virtual int exactMatch( char const currentLetter = char( 0 ) ) const
+    {
+        return 0;
     }
 
     virtual int deleteLetter( char const previousLetter, char const currentLetter, char const nextLetter = char( 0 ) ) const
     {
-        return 1;
+        if( nextLetter == char( 0 ) ){
+            return keyboard_->distance( previousLetter, currentLetter );
+        }
+
+        return 
+            std::min( 
+                keyboard_->distance( previousLetter, currentLetter ),
+                keyboard_->distance( currentLetter, nextLetter )
+            );
     }
+
+    KeyboardLayout const * keyboard_;
 };
 
 /*
@@ -185,7 +326,8 @@ struct TrieIterator
     {
         for( auto pair : node_->children_ )
         {
-            if( contain( pair.second->children_, c ) ){
+            if( contain( pair.second->children_, c ) )
+            {
                 iterators_.push_back(
                     new TrieIterator(
                         pair.second->children_[ c ],
@@ -202,11 +344,12 @@ struct TrieIterator
 
         for( auto pair : node_->children_ )
         {
-            if( pair.first == c ){
+            if( pair.first == c )
+            {
                 iterators_.push_back(
                     new TrieIterator(
                         node_->children_[ pair.first ],
-                        penalty_,
+                        penalty_ + penaltyPolicy_->exactMatch( c ),
                         iterators_,
                         penaltyPolicy_
 #ifndef NDEBUG
@@ -215,7 +358,8 @@ struct TrieIterator
                     )
                 );
             }
-            else{
+            else
+            {
                 iterators_.push_back(
                     new TrieIterator(
                         node_->children_[ pair.first ],
@@ -230,7 +374,8 @@ struct TrieIterator
             }
         }
 
-        penalty_ += penaltyPolicy_->deleteLetter( char( 0 ), c, nextLetter );
+        char const previousLetter = node_->parent_ ? node_->parent_->letter_ : char( 0 );
+        penalty_ += penaltyPolicy_->deleteLetter( previousLetter, c, nextLetter );
 
 #ifndef NDEBUG
         debug_ += "D";
@@ -341,6 +486,8 @@ struct SpellCheckerBase
             iterators_[ current ]->move( c );
         }
 
+        //std::cout << "Iterator counter: " << iterators_.size() << std::endl;
+
         int const penalty = penaltyPolicy_->maxNumberOfMistakes( ++ counter_ );
 
         auto const toBeRemoved = std::partition(
@@ -384,6 +531,15 @@ struct SpellChecker : SpellCheckerBase
     {
         readDictFile( fileName );
 
+        std::istringstream iss1( polishKeyboardLayout );
+        keyboard_.addLayout( 1, iss1 );
+
+        std::istringstream iss2( polishKeyboardShiftLayout );
+        keyboard_.addLayout( 0, iss2 );
+
+        //std::istringstream iss3( polishKeyboardAltLayout );
+        //keyboard_.addLayout( 2, iss3 );
+
 #ifndef NDEBUG
         TrieStats ts( trie_ );
         std::cout << "Nodes counter: " << ts.nodesCounter_ << std::endl;
@@ -396,7 +552,7 @@ struct SpellChecker : SpellCheckerBase
 
     std::vector< std::string > getSuggestions( std::string const & word )
     {
-        PenaltyPolicy penaltyPolicy;
+        PenaltyPolicy penaltyPolicy( & keyboard_ );
         init( & penaltyPolicy );
 
         for( char const c : word )
@@ -436,6 +592,8 @@ struct SpellChecker : SpellCheckerBase
 
         return result;
     }
+
+    KeyboardLayout keyboard_;
 };
 
 /*
@@ -446,9 +604,16 @@ int main( int args, char* argv[] )
 {
     SpellChecker sc( argv[ 1 ] );
 
-    for( std::string const & word : sc.getSuggestions( argv[ 2 ] ) )
+    while( true )
     {
-        std::cout << word << std::endl;
+        std::string word;
+        std::cout << "? ";
+        std::cin >> word;
+
+        for( std::string const & suggestion : sc.getSuggestions( word ) )
+        {
+            std::cout << suggestion << std::endl;
+        }
     }
 
     return 0;
