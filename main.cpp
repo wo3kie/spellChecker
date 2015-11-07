@@ -129,13 +129,6 @@ std::string const polishKeyboardShiftLayout(
     "   | Z | X | C | V | B | N | M | < | > | ? |"
 );
 
-std::string const polishKeyboardAltLayout(
-    "|   |   |   |   |   |   |   |   |   |   |   |   |\n"
-    " |   |   | ę |   |   |   |   |   | ó |   |   |\n"
-    "  | ą | ś |   |   |   |   |   |   | ł |   |   |\n"
-    "   | ż | ź | ć |   |   | ń |   |   |   |   |"
-);
-
 struct KeyboardLayout
 {
     struct Position
@@ -243,33 +236,30 @@ struct PenaltyPolicy
 
     virtual int maxNumberOfMistakes( int const wordLength ) const
     {
-        switch( wordLength )
-        {
-            case 1:
-            case 2: 
-            case 3:
-                return 2;
-            default:
-                return wordLength;
-        }
+        return 2 * wordLength;
     }
 
-    virtual int insertLetter( char const previousLetter, char const currentLetter, char const nextLetter = char( 0 ) ) const
+    virtual int swapLetter( char const currentLetter, char const nextLetter ) const
+    {
+        return 2;
+    }
+
+    virtual int insertLetter( char const currentLetter, char const insertedLetter, char const nextLetter = char( 0 ) ) const
     {
         if( nextLetter == char( 0 ) ){
-            return keyboard_->distance( previousLetter, currentLetter );
+            return 2 + keyboard_->distance( currentLetter, insertedLetter );
         }
 
         return 
-            std::min( 
-                keyboard_->distance( previousLetter, currentLetter ),
-                keyboard_->distance( currentLetter, nextLetter )
+            2 + std::min( 
+                keyboard_->distance( currentLetter, insertedLetter ),
+                keyboard_->distance( insertedLetter, nextLetter )
             );
     }
 
-    virtual int replaceLetter( char const previousLetter, char const currentLetter, char const nextLetter = char( 0 ) ) const
+    virtual int replaceLetter( char const currentLetter, char const replaceLetter, char const nextLetter = char( 0 ) ) const
     {
-        return keyboard_->distance( previousLetter, currentLetter );
+        return 2 + keyboard_->distance( currentLetter, replaceLetter );
     }
 
     virtual int exactMatch( char const currentLetter = char( 0 ) ) const
@@ -322,66 +312,7 @@ struct TrieIterator
     {
     }
 
-    void move( char const c, char const nextLetter = char( 0 ) )
-    {
-        for( auto pair : node_->children_ )
-        {
-            if( contain( pair.second->children_, c ) )
-            {
-                iterators_.push_back(
-                    new TrieIterator(
-                        pair.second->children_[ c ],
-                        penalty_ + penaltyPolicy_->insertLetter( c, pair.first, nextLetter ),
-                        iterators_,
-                        penaltyPolicy_
-#ifndef NDEBUG
-                        , debug_ + "I"
-#endif
-                    )
-                );
-            }
-        }
-
-        for( auto pair : node_->children_ )
-        {
-            if( pair.first == c )
-            {
-                iterators_.push_back(
-                    new TrieIterator(
-                        node_->children_[ pair.first ],
-                        penalty_ + penaltyPolicy_->exactMatch( c ),
-                        iterators_,
-                        penaltyPolicy_
-#ifndef NDEBUG
-                        , debug_ + "E"
-#endif
-                    )
-                );
-            }
-            else
-            {
-                iterators_.push_back(
-                    new TrieIterator(
-                        node_->children_[ pair.first ],
-                        penalty_ + penaltyPolicy_->replaceLetter( c, pair.first, nextLetter ),
-                        iterators_,
-                        penaltyPolicy_
-#ifndef NDEBUG
-                        , debug_ + "R"
-#endif
-                    )
-                );
-            }
-        }
-
-        char const previousLetter = node_->parent_ ? node_->parent_->letter_ : char( 0 );
-        penalty_ += penaltyPolicy_->deleteLetter( previousLetter, c, nextLetter );
-
-#ifndef NDEBUG
-        debug_ += "D";
-#endif
-
-    }
+    virtual void move( char const c, char const nextLetter = char( 0 ) );
     
     int getPenalty() const
     {
@@ -397,6 +328,132 @@ struct TrieIterator
     std::string debug_;
 #endif
 };
+
+struct SkipIteration
+    : TrieIterator
+{
+
+    SkipIteration(
+        Node * const root,
+        int const penalty,
+        std::vector< TrieIterator * > & iterators,
+        PenaltyPolicy * penaltyPolicy
+
+#ifndef NDEBUG
+        , std::string const & debug
+#endif
+
+    )
+        : TrieIterator(
+            root,
+            penalty,
+            iterators,
+            penaltyPolicy
+
+#ifndef NDEBUG
+            , debug
+#endif
+
+        )
+        , skip_( true )
+    {
+    }
+
+    void move( char const c, char const nextLetter ) override
+    {
+        if( skip_ )
+        {
+            skip_ = false;
+            return;
+        }
+
+        TrieIterator::move( c, nextLetter );
+    }
+
+    bool skip_;
+};
+
+void TrieIterator::move( char const c, char const nextLetter )
+{
+    if( nextLetter != char( 0 ) )
+    {
+        if( contain( node_->children_, nextLetter ) )
+        {
+            if( contain( node_->children_[ nextLetter ]->children_, c ) )
+            {
+                iterators_.push_back(
+                    new SkipIteration(
+                        node_->children_[ nextLetter ]->children_[ c ],
+                        penalty_ + penaltyPolicy_->swapLetter( c, nextLetter ),
+                        iterators_,
+                        penaltyPolicy_
+#ifndef NDEBUG
+                        , debug_ + "S"
+#endif
+                    )
+                );
+            }
+        }
+    }
+
+    for( auto pair : node_->children_ )
+    {
+        if( contain( pair.second->children_, c ) )
+        {
+            iterators_.push_back(
+                new TrieIterator(
+                    pair.second->children_[ c ],
+                    penalty_ + penaltyPolicy_->insertLetter( c, pair.first, nextLetter ),
+                    iterators_,
+                    penaltyPolicy_
+#ifndef NDEBUG
+                    , debug_ + "I"
+#endif
+                )
+            );
+        }
+    }
+
+    for( auto pair : node_->children_ )
+    {
+        if( pair.first == c )
+        {
+            iterators_.push_back(
+                new TrieIterator(
+                    node_->children_[ pair.first ],
+                    penalty_ + penaltyPolicy_->exactMatch( c ),
+                    iterators_,
+                    penaltyPolicy_
+#ifndef NDEBUG
+                    , debug_ + "E"
+#endif
+                )
+            );
+        }
+        else
+        {
+            iterators_.push_back(
+                new TrieIterator(
+                    node_->children_[ pair.first ],
+                    penalty_ + penaltyPolicy_->replaceLetter( c, pair.first, nextLetter ),
+                    iterators_,
+                    penaltyPolicy_
+#ifndef NDEBUG
+                    , debug_ + "R"
+#endif
+                )
+            );
+        }
+    }
+
+    char const previousLetter = node_->parent_ ? node_->parent_->letter_ : char( 0 );
+    penalty_ += penaltyPolicy_->deleteLetter( previousLetter, c, nextLetter );
+
+#ifndef NDEBUG
+    debug_ += "D";
+#endif
+
+}
 
 /*
  * SpellCheckerBase
@@ -483,7 +540,7 @@ struct SpellCheckerBase
     {
         for( unsigned current = 0, end = iterators_.size() ; current != end ; ++ current )
         {
-            iterators_[ current ]->move( c );
+            iterators_[ current ]->move( c, nextLetterHint );
         }
 
         //std::cout << "Iterator counter: " << iterators_.size() << std::endl;
@@ -537,9 +594,6 @@ struct SpellChecker : SpellCheckerBase
         std::istringstream iss2( polishKeyboardShiftLayout );
         keyboard_.addLayout( 0, iss2 );
 
-        //std::istringstream iss3( polishKeyboardAltLayout );
-        //keyboard_.addLayout( 2, iss3 );
-
 #ifndef NDEBUG
         TrieStats ts( trie_ );
         std::cout << "Nodes counter: " << ts.nodesCounter_ << std::endl;
@@ -552,13 +606,19 @@ struct SpellChecker : SpellCheckerBase
 
     std::vector< std::string > getSuggestions( std::string const & word )
     {
+        if( word.size() < 2 ){
+            return std::vector< std::string >( 1, word );
+        }
+
         PenaltyPolicy penaltyPolicy( & keyboard_ );
         init( & penaltyPolicy );
 
-        for( char const c : word )
+        for( unsigned i = 1 ; i < word.size() ; ++ i )
         {
-            emitLetter( c );
+            emitLetter( word[ i - 1 ], word[ i ] );
         }
+
+        emitLetter( word[ word.size() - 1 ] );
 
         std::vector< TrieIterator * > iterators( begin(), end() );
 
