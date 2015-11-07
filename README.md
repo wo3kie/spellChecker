@@ -84,3 +84,9 @@ $ ./sc english
 7968µs
 ```
 
+## todo  
+* Better memory management  
+* Support for *unicode* and polish language  
+* Reduce memory usage  
+* Code refactoring :)  
+
