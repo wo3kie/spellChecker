@@ -17,23 +17,10 @@ make
 $ ./sc english
 ? splel
 spell
+spool
 sole
-sell
-spiel
-spelt
-sold
-sloe
-sleek
-spoke
-spleen
-sleep
-? hceckre
+? hcekcre
 checker
-check
-checks
-checkers
-checked
-heck
 ```
 
 You can use it together with *rlwrap* to get history and easy editing  

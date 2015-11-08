@@ -234,7 +234,7 @@ struct PenaltyPolicy{
     }
 
     virtual int maxNumberOfMistakes( int const wordLength ) const {
-        return wordLength;
+        return std::max( 3, wordLength );
     }
 
     virtual int swapLetter( char const currentLetter, char const nextLetter ) const {
@@ -607,6 +607,14 @@ struct SpellChecker : SpellCheckerBase{
 
         for( unsigned i = 1 ; i < word.size() ; ++ i ){
             procesLetter( word[ i - 1 ], word[ i ] );
+
+            for( auto i : (*this) ){
+#ifndef NDEBUG
+                std::cout << "> " << i->word_ << " " << i->debug_ << " " << i->penalty_ << std::endl;
+#endif
+            }
+
+            std::cout << std::endl;
         }
 
         procesLetter( word[ word.size() - 1 ] );
