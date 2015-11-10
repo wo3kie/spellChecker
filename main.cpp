@@ -48,7 +48,7 @@ void test( T const & t ){
 
 struct Node{
     void free(){
-        for( auto pair : children_ ){
+        for( auto const & pair : children_ ){
             if( pair.second != nullptr ){
                 pair.second->free();
             }
@@ -192,40 +192,13 @@ struct KeyboardLayout{
     std::map< char, Position > layout_;
 };
 
-struct PronunciationPenalty
-{
-    unsigned distance( char c1, char c2 ) const {
-        c1 = std::tolower( c1 );
-        c2 = std::tolower( c2 );
-
-        return distanceImpl( std::min( c1, c2 ), std::max( c1, c2 ) );
-    }
-
-    unsigned distanceImpl( char c1, char c2 ) const {
-        if( c1 == 'c' && c2 == 'k' ){
-            return 1;
-        }
-
-        if( c1 == 'v' && c2 == 'w' ){
-            return 1;
-        }
-
-        if( c1 == 'b' && c2 == 'p' ){
-            return 1;
-        }
-
-        return -1;
-    }
-};
-
 /*
  * PenaltyPolicy
  */
 
 struct PenaltyPolicy{
-    PenaltyPolicy( KeyboardLayout const * keyboard, PronunciationPenalty const * pron )
-        : keyboard_( keyboard )
-        , pron_( pron )
+    PenaltyPolicy( KeyboardLayout const * keyboardLayout )
+        : keyboardLayout_( keyboardLayout )
     
     {
     }
@@ -246,9 +219,8 @@ struct PenaltyPolicy{
     }
 
     virtual int replaceLetter( char const currentLetter, char const replaceLetter, char const nextLetter = char( 0 ) ) const {
-        unsigned const distance1 = pron_->distance( currentLetter, replaceLetter );
 
-        unsigned distance2 = keyboard_->distance( currentLetter, replaceLetter );
+        unsigned distance2 = keyboardLayout_->distance( currentLetter, replaceLetter );
 
         if( distance2 == -1 ){
             distance2 = 4;
@@ -263,12 +235,11 @@ struct PenaltyPolicy{
         }
 
         if( nextLetter == char( 0 ) ){
-            return std::min( distance1, distance2 );
+            return distance2;
         }
 
-        unsigned const distance3 = pron_->distance( replaceLetter, nextLetter );
 
-        unsigned distance4 = keyboard_->distance( replaceLetter, nextLetter );
+        unsigned distance4 = keyboardLayout_->distance( replaceLetter, nextLetter );
 
         if( distance4 == -1 ){
             distance4 = 4;
@@ -282,7 +253,7 @@ struct PenaltyPolicy{
             distance4 = 2;
         }
 
-        return std::min( std::min( distance1, distance2 ), std::min( distance3, distance4 ) );
+        return std::min( distance2, distance4 );
     }
 
     virtual int exactMatch( char const currentLetter = char( 0 ) ) const {
@@ -293,8 +264,7 @@ struct PenaltyPolicy{
         return 3;
     }
 
-    KeyboardLayout const * keyboard_;
-    PronunciationPenalty const * pron_;
+    KeyboardLayout const * keyboardLayout_;
 };
 
 /*
@@ -405,7 +375,7 @@ void TrieIterator::move( char const c, char const nextLetter ){
         }
     }
 
-    for( auto pair : node_->children_ ){
+    for( auto const & pair : node_->children_ ){
         if( contain( pair.second->children_, c ) ){
             iterators_.push_back(
                 new TrieIterator(
@@ -422,7 +392,7 @@ void TrieIterator::move( char const c, char const nextLetter ){
         }
     }
 
-    for( auto pair : node_->children_ ){
+    for( auto const & pair : node_->children_ ){
         if( pair.first == c ){
             iterators_.push_back(
                 new TrieIterator(
@@ -511,6 +481,8 @@ struct SpellCheckerBase{
             iterators_.end(),
             []( TrieIterator const * const node ){ delete node; }
         );
+
+        iterators_.clear();
     }
 
     void readDictFile( std::string const & fileName ){
@@ -582,10 +554,10 @@ struct SpellChecker : SpellCheckerBase{
         readDictFile( fileName );
 
         std::istringstream iss1( polishKeyboardLayout );
-        keyboard_.addLayout( 1, iss1 );
+        keyboardLayout_.addLayout( 1, iss1 );
 
         std::istringstream iss2( polishKeyboardShiftLayout );
-        keyboard_.addLayout( 0, iss2 );
+        keyboardLayout_.addLayout( 0, iss2 );
 
 #ifndef NDEBUG
         TrieStats ts( trie_ );
@@ -602,13 +574,13 @@ struct SpellChecker : SpellCheckerBase{
             return std::vector< std::string >( 1, word );
         }
 
-        PenaltyPolicy penaltyPolicy( & keyboard_, & pron_ );
+        PenaltyPolicy penaltyPolicy( & keyboardLayout_ );
         init( & penaltyPolicy );
 
         for( unsigned i = 1 ; i < word.size() ; ++ i ){
             procesLetter( word[ i - 1 ], word[ i ] );
 
-            for( auto i : (*this) ){
+            for( auto const & i : (*this) ){
 #ifndef NDEBUG
                 std::cout << "> " << i->word_ << " " << i->debug_ << " " << i->penalty_ << std::endl;
 #endif
@@ -631,7 +603,7 @@ struct SpellChecker : SpellCheckerBase{
 
         std::vector< std::string > result;
 
-        for( auto i : iterators ){
+        for( auto const & i : iterators ){
             if( i->node_->end_ ){
 
 #ifndef NDEBUG
@@ -661,8 +633,7 @@ struct SpellChecker : SpellCheckerBase{
 
     }
 
-    KeyboardLayout keyboard_;
-    PronunciationPenalty pron_;
+    KeyboardLayout keyboardLayout_;
 };
 
 /*
