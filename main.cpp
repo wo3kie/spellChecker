@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <iostream>
 #include <fstream>
@@ -12,13 +13,115 @@
 bool const Debug = false;
 
 /*
- * Utils
+ * Bytes
  */
 
-template< typename TKey, typename TValue >
-bool contain( std::map< TKey, TValue > const & map, TKey const & key ){
-    return map.find( key ) != map.end();
-}
+template< typename T >
+struct Bytes
+{
+    static_assert( std::is_scalar< T >::value, "" );
+
+    Bytes()
+        : mem_()
+    {
+    }
+
+    explicit Bytes( T const & t ) {
+        * reinterpret_cast< T * >( mem_ ) = t;
+    }
+
+    T val() const {
+        return * reinterpret_cast< T const * >( mem_ );
+    }
+
+    T & ref() {
+        return * reinterpret_cast< T const * >( mem_ );
+    }
+
+    T const & ref() const {
+        return * reinterpret_cast< T const * >( mem_ );
+    }
+
+    char mem_[ sizeof( void * ) ];
+};
+
+static_assert( alignof( Bytes< int* > ) == 1, ":O(" );
+
+/*
+ * SimpleArray
+ */
+
+template< typename T >
+struct SimpleArray
+{
+    typedef T const * const_iterator;
+    
+    typedef Bytes< T * > Ptr;
+
+    SimpleArray()
+        : size_( 0 )
+        , ptr_( ( T * )( 0 ) )
+    {
+    }
+
+    SimpleArray( SimpleArray const & ) = delete;
+    SimpleArray( SimpleArray && ) = delete;
+
+    ~SimpleArray(){
+        delete ptr_.val();
+    }
+
+    const_iterator begin() const {
+        return ptr_.val();
+    }
+
+    const_iterator end() const {
+        return ptr_.val() + size_;
+    }
+    
+    void push_back( T const & t ){
+        if( size_ == 255 ){
+            throw std::out_of_range( "SimpleArray::push_back" );
+        }
+
+        /*
+         * always shrink_to_fit
+         */
+
+        Ptr new_ = Ptr( new T[ size_ + 1 ] );
+
+        for( unsigned i = 0 ; i < size_ ; ++ i ){
+            new_.val()[ i ] = ptr_.val()[ i ];
+        }
+
+        new_.val()[ size_ ] = t;
+        delete [] ptr_.val();
+        ptr_ = new_;
+
+        size_ += 1;
+    }
+
+    const_iterator find( char c ) const {
+        for( unsigned i = 0 ; i < size_ ; ++ i ){
+            if( ptr_.val()[ i ].first == c ){
+                return ptr_.val() + i;
+            }
+        }
+
+        return end();
+    }
+
+    unsigned size() const {
+        return size_;
+    }
+
+    char size_;
+    Ptr ptr_;
+};
+
+/*
+ * Utils
+ */
 
 template< typename T >
 bool contain( std::vector< T > const & array, T const & value ){
@@ -59,27 +162,38 @@ struct Node{
     Node & operator=( Node && ) = delete;
 
     void free(){
-        for( auto const & pair : children_ ){
-            if( pair.second != nullptr ){
-                pair.second->free();
+        for( auto const & pair : children__ ){
+            if( pair.second.val() != nullptr ){
+                pair.second.val()->free();
             }
+        }
+
+        for( auto const & pair : children__ ){
         }
 
         delete this;
     }
 
     bool end_ = false;
-    std::map< char, Node * > children_;
+    SimpleArray< std::pair< char, Bytes< Node * > > > children__;
 };
 
-Node * getOrCreate( Node * const node, char const c ){
-    Node *& result = node->children_[ c ];
+void print( Node const * node, int indent = 0 ) {
+    for( auto const & c : node->children__ ){
+        std::cout << std::string( indent, ' ' ) << c.first << std::endl;
+        print( c.second.val(), indent+2 );
+    }
+}
 
-    if( result != nullptr ){
-        return result;
+Node * getOrCreate( Node * const node, char const c ){
+    auto const cIt = node->children__.find( c );
+
+    if( cIt != node->children__.end() ){
+        return cIt->second.val();
     }
 
-    result = new Node;
+    auto const result = new Node();
+    node->children__.push_back( std::make_pair( c, Bytes< Node * >( result ) ) );
 
     return result;
 }
@@ -91,22 +205,22 @@ struct TrieStats{
 
     void traverse( Node const * const node ){
         nodesCounter_ += 1;
-        childrenCounter_ += node->children_.size();
+        childrenCounter_ += node->children__.size();
 
         if( node->end_ ){
             wordsCounter_ += 1;
         }
 
-        if( node->children_.empty() ){
+        if( node->children__.size() == 0 ){
             leavesCounter_ += 1;
         }
         else{
-            if( node->children_.size() == 1 ){
+            if( node->children__.size() == 1 ){
                 nodeWithOneChildCounter_ += 1;
             }
 
-            for( auto const & pair : node->children_ ){
-                traverse( pair.second );
+            for( auto const & pair : node->children__ ){
+                traverse( pair.second.val() );
             }
         }
     }
@@ -353,11 +467,16 @@ struct SkipIteration
 
 void TrieIterator::move( char const c, char const nextLetter ){
     if( nextLetter != char( 0 ) ){
-        if( contain( node_->children_, nextLetter ) ){
-            if( contain( node_->children_[ nextLetter ]->children_, c ) ){
+
+        auto const nextLetterIt = node_->children__.find( nextLetter );
+
+        if( nextLetterIt != node_->children__.end() ){
+            auto const cIt = nextLetterIt->second.val()->children__.find( c );
+
+            if( cIt != nextLetterIt->second.val()->children__.end() ){
                 iterators_.push_back(
                     new SkipIteration(
-                        node_->children_[ nextLetter ]->children_[ c ],
+                        cIt->second.val(),
                         penalty_ + penaltyPolicy_->swapLetter( c, nextLetter ),
                         iterators_,
                         penaltyPolicy_,
@@ -369,11 +488,13 @@ void TrieIterator::move( char const c, char const nextLetter ){
         }
     }
 
-    for( auto const & pair : node_->children_ ){
-        if( contain( pair.second->children_, c ) ){
+    for( auto const & pair : node_->children__ ){
+        auto const cIt = pair.second.val()->children__.find( c );
+
+        if( cIt != pair.second.val()->children__.end() ){
             iterators_.push_back(
                 new TrieIterator(
-                    pair.second->children_[ c ],
+                    cIt->second.val(),
                     penalty_ + penaltyPolicy_->insertLetter( c, pair.first, nextLetter ),
                     iterators_,
                     penaltyPolicy_,
@@ -384,11 +505,11 @@ void TrieIterator::move( char const c, char const nextLetter ){
         }
     }
 
-    for( auto const & pair : node_->children_ ){
+    for( auto const & pair : node_->children__ ){
         if( pair.first == c ){
             iterators_.push_back(
                 new TrieIterator(
-                    node_->children_[ pair.first ],
+                    pair.second.val(),
                     penalty_ + penaltyPolicy_->exactMatch( pair.first ),
                     iterators_,
                     penaltyPolicy_,
@@ -400,7 +521,7 @@ void TrieIterator::move( char const c, char const nextLetter ){
         else{
             iterators_.push_back(
                 new TrieIterator(
-                    node_->children_[ pair.first ],
+                    pair.second.val(),
                     penalty_ + penaltyPolicy_->replaceLetter( c, pair.first, nextLetter ),
                     iterators_,
                     penaltyPolicy_,
@@ -604,28 +725,164 @@ struct SpellChecker : SpellCheckerBase{
     }
 
     std::vector< std::string > getSuggestions( std::string const & word ){
-        std::vector< std::string > result;
-        test( [ this, & word, & result ](){ result = this->getSuggestionsImpl( word ); } );
-        return result;
+        if( true ){
+            std::vector< std::string > result;
+            test( [ this, & word, & result ](){ result = this->getSuggestionsImpl( word ); } );
+            return result;
+        }
+        else{
+            return this->getSuggestionsImpl( word );
+        }
     }
 
     KeyboardLayout keyboardLayout_;
 };
 
+void test( SpellChecker & sc )
+{
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "english" );
+        std::vector< std::string > const expected = {
+            "English", "neglig", "enlist"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "spell" );
+        std::vector< std::string > const expected = {
+            "spell", "swell","Aspell", "sell", "Ispell", "spool", "spelt"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "checker" );
+        std::vector< std::string > const expected = { 
+            "checker", "checked", "checks", "chewer",  "cheeked", "heckler", "check",
+            "chewed"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "a" );
+        std::vector< std::string > const expected = { 
+            "a"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "by" );
+        std::vector< std::string > const expected = { 
+            "by", "b", "y", "Ty", "bay", "boy", "buy", "Yb" 
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "cad" );
+        std::vector< std::string > const expected = { 
+            "cad", "car", "dad", "fad", "sad", "wad", "card", "ad", "Ada", "clad", "scad"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "boys" );
+        std::vector< std::string > const expected = { 
+            "boys", "boss", "buys", "bows", "bogs", "bobs", "boas", "Boas", "boy",
+            "buoys", "boy's", "Boyd", "bode"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "empty" );
+        std::vector< std::string > const expected = { 
+            "empty"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "sister" );
+        std::vector< std::string > const expected = { 
+            "sister", "Sister", "sitter", "sifter", "mister", "Mister", "sifted",
+            "misted", "kisser", "sissier", "sited", "mistier", "dissed", "site",
+            "sassed", "sieved", "kissed", "missed"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "England" );
+        std::vector< std::string > const expected = { 
+            "England"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "mitigate" );
+        std::vector< std::string > const expected = { 
+            "mitigate", "motivate"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "Alexander" );
+        std::vector< std::string > const expected = { 
+            "Alexander", "Alexandra"
+        };
+        assert( actual == expected );
+    }
+
+    {
+        std::vector< std::string > const actual = sc.getSuggestions( "zoologist" );
+        std::vector< std::string > const expected = { 
+            "zoologist",
+            "zoology"
+        };
+        assert( actual == expected );
+    }
+}
+
 /*
  * main
  */
 
-int main( int args, char* argv[] ){
+int main( int argc, char* argv[] ){
+    if( argc < 2 ){
+        std::cerr << "Usage: " << argv[ 0 ] << " dictfile [word]\n";
+        return 1;
+    }
+
     SpellChecker sc( argv[ 1 ] );
 
-    while( true ){
-        std::string word;
-        std::cout << "? ";
-        std::cin >> word;
+    if( argc == 2 )
+    {
+        while( true ){
+            std::string word;
+            std::cout << "? ";
+            std::cin >> word;
 
-        for( std::string const & suggestion : sc.getSuggestions( word ) ){
-            std::cout << suggestion << std::endl;
+            for( std::string const & suggestion : sc.getSuggestions( word ) ){
+                std::cout << suggestion << std::endl;
+            }
+        }
+    }
+    else
+    {
+        if( argv[ 2 ] == std::string( "--test" ) ){
+            test( sc );
+        }
+        else{
+            for( std::string const & suggestion : sc.getSuggestions( argv[ 2 ] ) ){
+                std::cout << suggestion << std::endl;
+            }
         }
     }
 

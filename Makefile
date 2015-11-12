@@ -7,6 +7,9 @@ all: sc
 sc: main.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 
+test: sc
+	./sc english --test
+
 clean:
 	rm -rf $(APPS)
 
