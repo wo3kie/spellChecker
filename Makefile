@@ -10,6 +10,9 @@ sc: main.cpp
 test: sc
 	./sc english --test
 
+memtest: sc
+	valgrind --leak-check=full ./sc english --test
+
 clean:
 	rm -rf $(APPS)
 

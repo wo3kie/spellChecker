@@ -19,7 +19,7 @@ bool const Debug = false;
 template< typename T >
 struct Bytes
 {
-    static_assert( std::is_scalar< T >::value, "" );
+    static_assert( std::is_scalar< T >::value, ":O(" );
 
     Bytes()
         : mem_()
@@ -68,7 +68,7 @@ struct SimpleArray
     SimpleArray( SimpleArray && ) = delete;
 
     ~SimpleArray(){
-        delete ptr_.val();
+        delete [] ptr_.val();
     }
 
     const_iterator begin() const {
@@ -162,38 +162,35 @@ struct Node{
     Node & operator=( Node && ) = delete;
 
     void free(){
-        for( auto const & pair : children__ ){
+        for( auto const & pair : children_ ){
             if( pair.second.val() != nullptr ){
                 pair.second.val()->free();
             }
-        }
-
-        for( auto const & pair : children__ ){
         }
 
         delete this;
     }
 
     bool end_ = false;
-    SimpleArray< std::pair< char, Bytes< Node * > > > children__;
+    SimpleArray< std::pair< char, Bytes< Node * > > > children_;
 };
 
 void print( Node const * node, int indent = 0 ) {
-    for( auto const & c : node->children__ ){
+    for( auto const & c : node->children_ ){
         std::cout << std::string( indent, ' ' ) << c.first << std::endl;
-        print( c.second.val(), indent+2 );
+        print( c.second.val(), indent + 2 );
     }
 }
 
 Node * getOrCreate( Node * const node, char const c ){
-    auto const cIt = node->children__.find( c );
+    auto const cIt = node->children_.find( c );
 
-    if( cIt != node->children__.end() ){
+    if( cIt != node->children_.end() ){
         return cIt->second.val();
     }
 
     auto const result = new Node();
-    node->children__.push_back( std::make_pair( c, Bytes< Node * >( result ) ) );
+    node->children_.push_back( std::make_pair( c, Bytes< Node * >( result ) ) );
 
     return result;
 }
@@ -205,21 +202,21 @@ struct TrieStats{
 
     void traverse( Node const * const node ){
         nodesCounter_ += 1;
-        childrenCounter_ += node->children__.size();
+        childrenCounter_ += node->children_.size();
 
         if( node->end_ ){
             wordsCounter_ += 1;
         }
 
-        if( node->children__.size() == 0 ){
+        if( node->children_.size() == 0 ){
             leavesCounter_ += 1;
         }
         else{
-            if( node->children__.size() == 1 ){
+            if( node->children_.size() == 1 ){
                 nodeWithOneChildCounter_ += 1;
             }
 
-            for( auto const & pair : node->children__ ){
+            for( auto const & pair : node->children_ ){
                 traverse( pair.second.val() );
             }
         }
@@ -468,12 +465,12 @@ struct SkipIteration
 void TrieIterator::move( char const c, char const nextLetter ){
     if( nextLetter != char( 0 ) ){
 
-        auto const nextLetterIt = node_->children__.find( nextLetter );
+        auto const nextLetterIt = node_->children_.find( nextLetter );
 
-        if( nextLetterIt != node_->children__.end() ){
-            auto const cIt = nextLetterIt->second.val()->children__.find( c );
+        if( nextLetterIt != node_->children_.end() ){
+            auto const cIt = nextLetterIt->second.val()->children_.find( c );
 
-            if( cIt != nextLetterIt->second.val()->children__.end() ){
+            if( cIt != nextLetterIt->second.val()->children_.end() ){
                 iterators_.push_back(
                     new SkipIteration(
                         cIt->second.val(),
@@ -488,10 +485,10 @@ void TrieIterator::move( char const c, char const nextLetter ){
         }
     }
 
-    for( auto const & pair : node_->children__ ){
-        auto const cIt = pair.second.val()->children__.find( c );
+    for( auto const & pair : node_->children_ ){
+        auto const cIt = pair.second.val()->children_.find( c );
 
-        if( cIt != pair.second.val()->children__.end() ){
+        if( cIt != pair.second.val()->children_.end() ){
             iterators_.push_back(
                 new TrieIterator(
                     cIt->second.val(),
@@ -505,7 +502,7 @@ void TrieIterator::move( char const c, char const nextLetter ){
         }
     }
 
-    for( auto const & pair : node_->children__ ){
+    for( auto const & pair : node_->children_ ){
         if( pair.first == c ){
             iterators_.push_back(
                 new TrieIterator(
@@ -725,7 +722,7 @@ struct SpellChecker : SpellCheckerBase{
     }
 
     std::vector< std::string > getSuggestions( std::string const & word ){
-        if( true ){
+        if( Debug ){
             std::vector< std::string > result;
             test( [ this, & word, & result ](){ result = this->getSuggestionsImpl( word ); } );
             return result;
