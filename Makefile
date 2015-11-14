@@ -1,6 +1,5 @@
 CXX=g++
-CC=$(CXX)
-CXXFLAGS=$(INC) --std=c++11 -g -O1
+CXXFLAGS=--std=c++11 -g -O1
 
 all: sc
 

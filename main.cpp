@@ -13,41 +13,6 @@
 bool const Debug = false;
 
 /*
- * Bytes
- */
-
-template< typename T >
-struct Bytes
-{
-    static_assert( std::is_scalar< T >::value, ":O(" );
-
-    Bytes()
-        : mem_()
-    {
-    }
-
-    explicit Bytes( T const & t ) {
-        * reinterpret_cast< T * >( mem_ ) = t;
-    }
-
-    T val() const {
-        return * reinterpret_cast< T const * >( mem_ );
-    }
-
-    T & ref() {
-        return * reinterpret_cast< T const * >( mem_ );
-    }
-
-    T const & ref() const {
-        return * reinterpret_cast< T const * >( mem_ );
-    }
-
-    char mem_[ sizeof( void * ) ];
-};
-
-static_assert( alignof( Bytes< int* > ) == 1, ":O(" );
-
-/*
  * SimpleArray
  */
 
@@ -56,7 +21,7 @@ struct SimpleArray
 {
     typedef T const * const_iterator;
     
-    typedef Bytes< T * > Ptr;
+    typedef T * Ptr;
 
     SimpleArray()
         : size_( 0 )
@@ -68,15 +33,15 @@ struct SimpleArray
     SimpleArray( SimpleArray && ) = delete;
 
     ~SimpleArray(){
-        delete [] ptr_.val();
+        delete [] ptr_;
     }
 
     const_iterator begin() const {
-        return ptr_.val();
+        return ptr_;
     }
 
     const_iterator end() const {
-        return ptr_.val() + size_;
+        return ptr_ + size_;
     }
     
     void push_back( T const & t ){
@@ -91,11 +56,11 @@ struct SimpleArray
         Ptr new_ = Ptr( new T[ size_ + 1 ] );
 
         for( unsigned i = 0 ; i < size_ ; ++ i ){
-            new_.val()[ i ] = ptr_.val()[ i ];
+            new_[ i ] = ptr_[ i ];
         }
 
-        new_.val()[ size_ ] = t;
-        delete [] ptr_.val();
+        new_[ size_ ] = t;
+        delete [] ptr_;
         ptr_ = new_;
 
         size_ += 1;
@@ -103,8 +68,8 @@ struct SimpleArray
 
     const_iterator find( char c ) const {
         for( unsigned i = 0 ; i < size_ ; ++ i ){
-            if( ptr_.val()[ i ].first == c ){
-                return ptr_.val() + i;
+            if( ptr_[ i ]->letter_ == c ){
+                return ptr_ + i;
             }
         }
 
@@ -162,35 +127,30 @@ struct Node{
     Node & operator=( Node && ) = delete;
 
     void free(){
-        for( auto const & pair : children_ ){
-            if( pair.second.val() != nullptr ){
-                pair.second.val()->free();
+        for( auto const & node : children_ ){
+            if( node != nullptr ){
+                node->free();
             }
         }
 
         delete this;
     }
 
+    char letter_ = 0;
     bool end_ = false;
-    SimpleArray< std::pair< char, Bytes< Node * > > > children_;
+    SimpleArray< Node * > children_;
 };
-
-void print( Node const * node, int indent = 0 ) {
-    for( auto const & c : node->children_ ){
-        std::cout << std::string( indent, ' ' ) << c.first << std::endl;
-        print( c.second.val(), indent + 2 );
-    }
-}
 
 Node * getOrCreate( Node * const node, char const c ){
     auto const cIt = node->children_.find( c );
 
     if( cIt != node->children_.end() ){
-        return cIt->second.val();
+        return * cIt;
     }
 
     auto const result = new Node();
-    node->children_.push_back( std::make_pair( c, Bytes< Node * >( result ) ) );
+    result->letter_ = c;
+    node->children_.push_back( result );
 
     return result;
 }
@@ -216,8 +176,8 @@ struct TrieStats{
                 nodeWithOneChildCounter_ += 1;
             }
 
-            for( auto const & pair : node->children_ ){
-                traverse( pair.second.val() );
+            for( auto const & c : node->children_ ){
+                traverse( c );
             }
         }
     }
@@ -468,12 +428,12 @@ void TrieIterator::move( char const c, char const nextLetter ){
         auto const nextLetterIt = node_->children_.find( nextLetter );
 
         if( nextLetterIt != node_->children_.end() ){
-            auto const cIt = nextLetterIt->second.val()->children_.find( c );
+            auto const cIt = ( * nextLetterIt )->children_.find( c );
 
-            if( cIt != nextLetterIt->second.val()->children_.end() ){
+            if( cIt != ( * nextLetterIt )->children_.end() ){
                 iterators_.push_back(
                     new SkipIteration(
-                        cIt->second.val(),
+                        * cIt,
                         penalty_ + penaltyPolicy_->swapLetter( c, nextLetter ),
                         iterators_,
                         penaltyPolicy_,
@@ -485,32 +445,32 @@ void TrieIterator::move( char const c, char const nextLetter ){
         }
     }
 
-    for( auto const & pair : node_->children_ ){
-        auto const cIt = pair.second.val()->children_.find( c );
+    for( auto const & node : node_->children_ ){
+        auto const cIt = node->children_.find( c );
 
-        if( cIt != pair.second.val()->children_.end() ){
+        if( cIt != node->children_.end() ){
             iterators_.push_back(
                 new TrieIterator(
-                    cIt->second.val(),
-                    penalty_ + penaltyPolicy_->insertLetter( c, pair.first, nextLetter ),
+                    * cIt,
+                    penalty_ + penaltyPolicy_->insertLetter( c, node->letter_, nextLetter ),
                     iterators_,
                     penaltyPolicy_,
-                    word_ + std::string( 1, pair.first ) + std::string( 1, c ),
+                    word_ + std::string( 1, node->letter_ ) + std::string( 1, c ),
                     debug_ + "I"
                 )
             );
         }
     }
 
-    for( auto const & pair : node_->children_ ){
-        if( pair.first == c ){
+    for( auto const & node : node_->children_ ){
+        if( node->letter_ == c ){
             iterators_.push_back(
                 new TrieIterator(
-                    pair.second.val(),
-                    penalty_ + penaltyPolicy_->exactMatch( pair.first ),
+                    node,
+                    penalty_ + penaltyPolicy_->exactMatch( node->letter_ ),
                     iterators_,
                     penaltyPolicy_,
-                    word_ + std::string( 1, pair.first ),
+                    word_ + std::string( 1, node->letter_ ),
                     debug_ + "E"
                 )
             );
@@ -518,11 +478,11 @@ void TrieIterator::move( char const c, char const nextLetter ){
         else{
             iterators_.push_back(
                 new TrieIterator(
-                    pair.second.val(),
-                    penalty_ + penaltyPolicy_->replaceLetter( c, pair.first, nextLetter ),
+                    node,
+                    penalty_ + penaltyPolicy_->replaceLetter( c, node->letter_, nextLetter ),
                     iterators_,
                     penaltyPolicy_,
-                    word_ + std::string( 1, pair.first ),
+                    word_ + std::string( 1, node->letter_ ),
                     debug_ + "R"
                 )
             );
