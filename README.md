@@ -1,18 +1,20 @@
-# spellChecker  
+## Copyright (C) 2015 Łukasz Czerwiński
+
+## SpellChecker  
 Implementation of spell checker in C++  
 
-## license  
-For license please refer to LICENSE file  
+## Website
+https://github.com/wo3kie/server
 
-## requirements  
+## Requirements  
 C++11  
 
-## how to build it?  
+## How to build it?  
 ```{r, engine='bash'}
 make  
 ```
 
-## how to run it?  
+## How to run it?  
 ```{r, engine='bash'}
 $ ./sc english
 ? splel
@@ -29,7 +31,7 @@ You can use it together with *rlwrap* to get history and easy editing
 $ rlwrap ./sc english
 ```
   
-## performance
+## Performance
 spellChecker most of the time can return suggestions to you in less than 1 millisecond  
 ```{r, engine='bash'}
 $ ./sc english
@@ -71,7 +73,7 @@ $ ./sc english
 7968µs
 ```
 
-## todo  
+## Todo  
 * Better memory management  
 * Support for *unicode* and polish language  
 * Reduce memory usage  
